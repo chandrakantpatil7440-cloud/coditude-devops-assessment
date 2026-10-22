@@ -1,0 +1,37 @@
+﻿name: Infrastructure Template Validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/cloudformation/**"
+      - ".github/workflows/infra-validate.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/cloudformation/**"
+      - ".github/workflows/infra-validate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-cloudformation:
+    name: Validate CloudFormation Templates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install cfn-lint
+        run: python -m pip install cfn-lint
+
+      - name: Lint CloudFormation templates
+        run: cfn-lint infra/cloudformation/*.yaml
