@@ -1,192 +1,58 @@
-\# Coditude DevOps Assessment
+﻿# Coditude DevOps Assessment
 
+Next.js frontend, FastAPI backend, and PostgreSQL with Docker, AWS CloudFormation, and GitHub Actions.
 
+## Technology Stack
+- Frontend: Next.js, React, TypeScript
+- Backend: Python, FastAPI, Uvicorn
+- Database: PostgreSQL
+- Containers: Docker and Docker Compose
+- Infrastructure as Code: AWS CloudFormation
+- CI/CD: GitHub Actions
 
-\## Project Overview
+## Repository Structure
+- app/frontend - Next.js frontend
+- app/backend - FastAPI backend
+- infra/cloudformation - network, security, database, ECR, and ECS templates
+- .github/workflows/ci.yml - application build and health checks
+- .github/workflows/infra-validate.yml - CloudFormation template linting
+- docs/architecture.md - architecture details
+- docs/architecture-diagram.md - intended architecture diagram
+- docs/ci-cd.md - pipeline design and deployment recommendations
+- docs/deployment.md - deployment guide
 
+## Run Locally
+Prerequisites: Docker Desktop and Docker Compose.
 
-
-Production-oriented deployment design for a Next.js frontend, FastAPI backend, and PostgreSQL database using Docker, AWS CloudFormation, and GitHub Actions.
-
-
-
-\## Application Stack
-
-
-
-\- \*\*Frontend:\*\* Next.js, React, TypeScript
-
-\- \*\*Backend:\*\* Python, FastAPI, Uvicorn
-
-\- \*\*Database:\*\* PostgreSQL
-
-\- \*\*Local development:\*\* Docker Compose
-
-\- \*\*Infrastructure as Code:\*\* AWS CloudFormation
-
-\- \*\*CI:\*\* GitHub Actions
-
-
-
-\## Repository Structure
-
-
-
-```text
-
-.
-
-├── app/
-
-│   ├── frontend/
-
-│   └── backend/
-
-├── infra/
-
-│   └── cloudformation/
-
-│       ├── network.yaml
-
-│       ├── security.yaml
-
-│       └── database.yaml
-
-├── .github/
-
-│   └── workflows/
-
-│       └── ci.yml
-
-├── docker-compose.yml
-
-└── README.md
-
+```powershell
+docker compose up --build -d
+docker compose ps
 ```
 
-
-
-\## Run Locally
-
-
-
-Prerequisites: Docker Desktop, Git, and PowerShell.
-
-
-
-1\. Create a local `.env` file containing a strong `POSTGRES\_PASSWORD` value.
-
-2\. Start the application:
-
-
-
-&#x20;  ```powershell
-
-&#x20;  docker compose up --build -d
-
-&#x20;  ```
-
-
-
-3\. Check service status:
-
-
-
-&#x20;  ```powershell
-
-&#x20;  docker compose ps
-
-&#x20;  ```
-
-
-
-4\. Test endpoints:
-
-
-
-&#x20;  - Frontend: `http://localhost:3000`
-
-&#x20;  - Backend health: `http://localhost:8000/health`
-
-&#x20;  - Frontend-to-backend health: `http://localhost:3000/api/health`
-
-&#x20;  - Database health: `http://localhost:3000/api/health/db`
-
-
-
-5\. Stop services:
-
-
-
-&#x20;  ```powershell
-
-&#x20;  docker compose down
-
-&#x20;  ```
-
-
-
-\## AWS Architecture Design
-
-
-
-CloudFormation templates define:
-
-
-
-\- A VPC with two public and two private subnets across two Availability Zones.
-
-\- An Internet Gateway and public routing.
-
-\- Security groups for the load balancer, frontend, backend, and database.
-
-\- A private PostgreSQL RDS instance with encryption and managed master credentials.
-
-\- Production-specific database settings for Multi-AZ, backups, and deletion protection.
-
-
-
-The current templates are infrastructure building blocks and are not yet a complete, deployed application architecture. Container hosting, load balancer resources, image publishing, private-subnet connectivity, and deployment orchestration still need to be implemented and validated.
-
-
-
-\## Continuous Integration
-
-
-
-The GitHub Actions workflow runs on pushes and pull requests targeting `main`. It builds the frontend and builds the backend Docker image, then checks the backend health endpoint.
-
-
-
-\## Security Considerations
-
-
-
-\- Keep `.env` and credentials out of source control.
-
-\- Keep PostgreSQL private; do not expose port 5432 publicly.
-
-\- Restrict application access through security groups.
-
-\- Use managed database credentials and encrypted storage.
-
-\- Store CI/CD cloud credentials in an appropriately configured identity/secret mechanism.
-
-
-
-\## Deployment Status
-
-
-
-\- Local Docker Compose application: tested.
-
-\- GitHub Actions CI: passed.
-
-\- CloudFormation templates: created and syntax-validated.
-
-\- AWS deployment: not performed.
-
-\- Production readiness: further integration, deployment testing, monitoring, and operational validation required.
-
-
-
+Endpoints:
+- Frontend: http://localhost:3000
+- Backend health: http://localhost:8000/health
+- Database health: http://localhost:8000/health/db
+
+Stop the application:
+```powershell
+docker compose down
+```
+
+## CI/CD
+Application CI builds the frontend, builds the backend Docker image, and checks the backend health endpoint.
+Infrastructure validation runs cfn-lint against CloudFormation templates. It does not deploy AWS resources.
+See docs/ci-cd.md.
+
+## Security
+- Do not commit credentials or .env files.
+- Keep PostgreSQL private and restrict access with security groups.
+- Use Secrets Manager and least-privilege IAM roles.
+- Add HTTPS, monitoring, backups, and production approvals before production use.
+
+## Deployment Status
+- Local Docker Compose and health checks were previously tested successfully.
+- GitHub Actions workflows are configured; check the Actions tab for current results.
+- AWS deployment is pending because an AWS Organizations service control policy denies CloudFormation operations.
+- The architecture diagram describes the intended design, not a deployed environment.
+- Production readiness requires successful AWS deployment and end-to-end security and operational testing.
