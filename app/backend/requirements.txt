@@ -1,4 +1,4 @@
-﻿fastapi
-uvicorn[standard]
-psycopg[binary]
-pydantic-settings
+﻿fastapi==0.158.1
+uvicorn==0.54.0
+psycopg[binary]==3.3.6
+pydantic-settings==2.16.1
