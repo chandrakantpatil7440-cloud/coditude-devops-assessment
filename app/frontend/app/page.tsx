@@ -13,7 +13,7 @@ export default function Home() {
   const [database, setDatabase] = useState("Checking...");
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/health")
+    fetch("/api/health")
       .then((res) => {
         if (!res.ok) throw new Error("Backend unavailable");
         return res.json();
@@ -21,7 +21,7 @@ export default function Home() {
       .then((data: Health) => setBackend(data.status))
       .catch(() => setBackend("Unavailable"));
 
-    fetch("http://127.0.0.1:8000/health/db")
+    fetch("/api/health/db")
       .then((res) => {
         if (!res.ok) throw new Error("Database unavailable");
         return res.json();
@@ -79,3 +79,4 @@ export default function Home() {
     </main>
   );
 }
+
