@@ -1,6 +1,8 @@
-﻿import os
+﻿
+import os
+from urllib.parse import quote
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from psycopg import connect
 
@@ -18,6 +20,33 @@ app.add_middleware(
 )
 
 
+def get_database_url():
+    # Keep compatibility with local Docker Compose configuration.
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        return database_url
+
+    # ECS will receive these values from its task configuration
+    # and AWS Secrets Manager.
+    host = os.getenv("DATABASE_HOST")
+    name = os.getenv("DATABASE_NAME")
+    username = os.getenv("DATABASE_USERNAME")
+    password = os.getenv("DATABASE_PASSWORD")
+    port = os.getenv("DATABASE_PORT", "5432")
+
+    if not all([host, name, username, password]):
+        return None
+
+    encoded_username = quote(username, safe="")
+    encoded_password = quote(password, safe="")
+    encoded_name = quote(name, safe="")
+
+    return (
+        f"postgresql://{encoded_username}:{encoded_password}"
+        f"@{host}:{port}/{encoded_name}"
+    )
+
+
 @app.get("/")
 def root():
     return {"message": "Coditude Assessment API is running"}
@@ -30,7 +59,7 @@ def health():
 
 @app.get("/health/db")
 def database_health():
-    database_url = os.getenv("DATABASE_URL")
+    database_url = get_database_url()
 
     if not database_url:
         return {
@@ -47,7 +76,6 @@ def database_health():
         return {"status": "healthy", "database": "PostgreSQL"}
 
     except Exception:
-        from fastapi import HTTPException
         raise HTTPException(
             status_code=503,
             detail="Database connection failed",

@@ -1,0 +1,352 @@
+﻿
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ECS Fargate services for Next.js frontend and FastAPI backend with PostgreSQL integration.
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Default: dev
+
+  NetworkStackName:
+    Type: String
+    Description: Deployed network stack name
+
+  SecurityStackName:
+    Type: String
+    Description: Deployed security stack name
+
+  FrontendImageUri:
+    Type: String
+    Description: Full frontend ECR image URI including tag
+
+  BackendImageUri:
+    Type: String
+    Description: Full backend ECR image URI including tag
+
+  DatabaseEndpoint:
+    Type: String
+    Description: RDS PostgreSQL endpoint hostname
+
+  DatabasePort:
+    Type: Number
+    Default: 5432
+
+  DatabaseName:
+    Type: String
+    Default: assessmentdb
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    MaxLength: 63
+
+  DatabaseSecretArn:
+    Type: String
+    Description: ARN of the RDS-managed Secrets Manager secret
+
+  DesiredCount:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 10
+
+  ContainerCpu:
+    Type: Number
+    Default: 256
+    AllowedValues:
+      - 256
+
+  ContainerMemory:
+    Type: Number
+    Default: 512
+    AllowedValues:
+      - 512
+      - 1024
+      - 2048
+
+Resources:
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub 'coditude-${Environment}'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  FrontendTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  BackendTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadDatabaseCredentials
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref DatabaseSecretArn
+
+  FrontendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/coditude-${Environment}/frontend'
+      RetentionInDays: 14
+
+  BackendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/coditude-${Environment}/backend'
+      RetentionInDays: 14
+
+  PrivateNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: !Sub 'coditude-${Environment}.local'
+      Vpc: !ImportValue
+        Fn::Sub: '${NetworkStackName}-VpcId'
+      Description: Private service discovery for ECS services
+
+  BackendDiscoveryService:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: backend
+      NamespaceId: !Ref PrivateNamespace
+      DnsConfig:
+        RoutingPolicy: MULTIVALUE
+        DnsRecords:
+          - Type: A
+            TTL: 10
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  FrontendTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'coditude-${Environment}-frontend'
+      Cpu: !Ref ContainerCpu
+      Memory: !Ref ContainerMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt FrontendTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: frontend
+          Image: !Ref FrontendImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          Environment:
+            - Name: API_INTERNAL_URL
+              Value: !Sub 'http://backend.coditude-${Environment}.local:8000'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref FrontendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: frontend
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - 'wget -q -O - http://127.0.0.1:3000/ >/dev/null || exit 1'
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+
+  BackendTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub 'coditude-${Environment}-backend'
+      Cpu: !Ref ContainerCpu
+      Memory: !Ref ContainerMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt BackendTaskExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: backend
+          Image: !Ref BackendImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          Environment:
+            - Name: DATABASE_HOST
+              Value: !Ref DatabaseEndpoint
+            - Name: DATABASE_PORT
+              Value: !Ref DatabasePort
+            - Name: DATABASE_NAME
+              Value: !Ref DatabaseName
+          Secrets:
+            - Name: DATABASE_USERNAME
+              ValueFrom: !Sub '${DatabaseSecretArn}:username::'
+            - Name: DATABASE_PASSWORD
+              ValueFrom: !Sub '${DatabaseSecretArn}:password::'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref BackendLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: backend
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - 'python -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:8000/health'', timeout=3)"'
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 30
+
+  FrontendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub 'cod-${Environment}-frontend'
+      VpcId: !ImportValue
+        Fn::Sub: '${NetworkStackName}-VpcId'
+      Protocol: HTTP
+      Port: 3000
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: '200-399'
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub 'coditude-${Environment}'
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !ImportValue
+          Fn::Sub: '${NetworkStackName}-PublicSubnetA'
+        - !ImportValue
+          Fn::Sub: '${NetworkStackName}-PublicSubnetB'
+      SecurityGroups:
+        - !ImportValue
+          Fn::Sub: '${SecurityStackName}-AlbSecurityGroupId'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FrontendTargetGroup
+
+  FrontendService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - HTTPListener
+    Properties:
+      ServiceName: !Sub 'coditude-${Environment}-frontend'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref FrontendTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      HealthCheckGracePeriodSeconds: 90
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !ImportValue
+              Fn::Sub: '${NetworkStackName}-PublicSubnetA'
+            - !ImportValue
+              Fn::Sub: '${NetworkStackName}-PublicSubnetB'
+          SecurityGroups:
+            - !ImportValue
+              Fn::Sub: '${SecurityStackName}-FrontendSecurityGroupId'
+      LoadBalancers:
+        - ContainerName: frontend
+          ContainerPort: 3000
+          TargetGroupArn: !Ref FrontendTargetGroup
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      EnableECSManagedTags: true
+      PropagateTags: SERVICE
+
+  BackendService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub 'coditude-${Environment}-backend'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref BackendTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      HealthCheckGracePeriodSeconds: 60
+      ServiceRegistries:
+        - RegistryArn: !GetAtt BackendDiscoveryService.Arn
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !ImportValue
+              Fn::Sub: '${NetworkStackName}-PublicSubnetA'
+            - !ImportValue
+              Fn::Sub: '${NetworkStackName}-PublicSubnetB'
+          SecurityGroups:
+            - !ImportValue
+              Fn::Sub: '${SecurityStackName}-BackendSecurityGroupId'
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
+      EnableECSManagedTags: true
+      PropagateTags: SERVICE
+
+Outputs:
+  ClusterName:
+    Description: ECS cluster name
+    Value: !Ref ECSCluster
+
+  FrontendServiceName:
+    Description: ECS frontend service name
+    Value: !Ref FrontendService
+
+  BackendServiceName:
+    Description: ECS backend service name
+    Value: !Ref BackendService
+
+  LoadBalancerDNS:
+    Description: Public application URL hostname
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+
+  ApplicationURL:
+    Description: HTTP URL for the application
+    Value: !Sub 'http://${ApplicationLoadBalancer.DNSName}'
