@@ -1,0 +1,97 @@
+﻿AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Coditude Assessment - Application and database security groups'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: ID of the VPC created by the network stack
+
+Resources:
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow public HTTP traffic to the load balancer
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub 'coditude-${Environment}-alb-sg'
+
+  FrontendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow frontend traffic only from the load balancer
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub 'coditude-${Environment}-frontend-sg'
+
+  BackendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow backend traffic only from the load balancer
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub 'coditude-${Environment}-backend-sg'
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow PostgreSQL traffic only from the backend
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref BackendSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub 'coditude-${Environment}-database-sg'
+
+Outputs:
+  LoadBalancerSecurityGroupId:
+    Description: Security group ID for the public load balancer
+    Value: !Ref LoadBalancerSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-AlbSecurityGroupId'
+
+  FrontendSecurityGroupId:
+    Description: Security group ID for the Next.js application
+    Value: !Ref FrontendSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-FrontendSecurityGroupId'
+
+  BackendSecurityGroupId:
+    Description: Security group ID for the FastAPI application
+    Value: !Ref BackendSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-BackendSecurityGroupId'
+
+  DatabaseSecurityGroupId:
+    Description: Security group ID for PostgreSQL
+    Value: !Ref DatabaseSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-DatabaseSecurityGroupId'
