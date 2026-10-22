@@ -134,5 +134,39 @@ Recommended additions include CloudWatch application and infrastructure metrics,
 
 6\. Validate the full architecture in AWS before describing it as production-ready.
 
+@'
 
+## 8. Architecture Diagram
+
+The following diagram represents the proposed target architecture, not a deployed AWS environment.
+
+```mermaid
+flowchart TB
+    U[Internet Users] --> IGW[Internet Gateway]
+    IGW --> ALB[Application Load Balancer]
+
+    subgraph VPC["VPC 10.0.0.0/16"]
+        subgraph PUB["Public Subnets - AZ A and AZ B"]
+            ALB
+        end
+
+        subgraph APP["Private Application Tier - Planned"]
+            FE1[Next.js Frontend - AZ A]
+            FE2[Next.js Frontend - AZ B]
+            BE[FastAPI Backend]
+        end
+
+        subgraph DB["Private Database Subnets"]
+            RDS[(Amazon RDS PostgreSQL)]
+        end
+
+        ALB --> FE1
+        ALB --> FE2
+        FE1 --> BE
+        FE2 --> BE
+        BE --> RDS
+    end
+
+    SEC[AWS Secrets Manager] -. Database credentials .-> RDS
+    CW[Amazon CloudWatch] -. Monitoring - planned .-> APP
 
