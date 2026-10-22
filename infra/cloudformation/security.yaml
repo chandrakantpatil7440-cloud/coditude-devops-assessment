@@ -52,7 +52,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 8000
           ToPort: 8000
-          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+          SourceSecurityGroupId: !Ref FrontendSecurityGroup
       Tags:
         - Key: Name
           Value: !Sub 'coditude-${Environment}-backend-sg'
