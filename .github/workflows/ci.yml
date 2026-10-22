@@ -1,0 +1,62 @@
+
+name: Application CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+  backend-docker-build:
+    name: Backend Docker Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t assessment-backend:ci ./app/backend
+
+      - name: Validate backend health endpoint
+        run: |
+          docker run -d --name backend-test -p 8000:8000 assessment-backend:ci
+          for i in $(seq 1 15); do
+            if curl -fsS http://localhost:8000/health; then
+              docker rm -f backend-test
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs backend-test
+          docker rm -f backend-test
+          exit 1
