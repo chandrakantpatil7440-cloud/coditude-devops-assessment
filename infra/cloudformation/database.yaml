@@ -1,0 +1,98 @@
+﻿AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Coditude Assessment - Secure PostgreSQL RDS database'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Deployment environment
+
+  PrivateSubnetAId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private subnet in the first Availability Zone
+
+  PrivateSubnetBId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Private subnet in the second Availability Zone
+
+  DatabaseSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group allowing PostgreSQL access from the backend
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.micro
+    Description: Select an instance class appropriate for the environment
+
+  DBName:
+    Type: String
+    Default: assessmentdb
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    MaxLength: 63
+    Description: PostgreSQL database name
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+
+Resources:
+  PostgreSQLSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub 'Private database subnets for ${Environment}'
+      SubnetIds:
+        - !Ref PrivateSubnetAId
+        - !Ref PrivateSubnetBId
+      Tags:
+        - Key: Name
+          Value: !Sub 'coditude-${Environment}-db-subnets'
+
+  PostgreSQLDatabase:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub 'coditude-${Environment}-postgres'
+      Engine: postgres
+      DBName: !Ref DBName
+      MasterUsername: appadmin
+      ManageMasterUserPassword: true
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: 20
+      MaxAllocatedStorage: 100
+      StorageType: gp3
+      StorageEncrypted: true
+      PubliclyAccessible: false
+      DBSubnetGroupName: !Ref PostgreSQLSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroupId
+      MultiAZ: !If [IsProduction, true, false]
+      BackupRetentionPeriod: !If [IsProduction, 7, 1]
+      DeletionProtection: !If [IsProduction, true, false]
+      AutoMinorVersionUpgrade: true
+      CopyTagsToSnapshot: true
+      Tags:
+        - Key: Name
+          Value: !Sub 'coditude-${Environment}-postgres'
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  DatabaseIdentifier:
+    Description: RDS database identifier
+    Value: !Ref PostgreSQLDatabase
+
+  DatabaseEndpoint:
+    Description: Private PostgreSQL endpoint hostname
+    Value: !GetAtt PostgreSQLDatabase.Endpoint.Address
+
+  DatabasePort:
+    Description: PostgreSQL port
+    Value: !GetAtt PostgreSQLDatabase.Endpoint.Port
+
+  DatabaseSecretArn:
+    Description: ARN of the RDS-managed master credentials secret
+    Value: !GetAtt PostgreSQLDatabase.MasterUserSecret.SecretArn
